@@ -4,7 +4,6 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>オンラインHEIC画像ビュアー</title>
-    <script src="https://cdn.jsdelivr.net/npm/heic2any@0.0.4/dist/heic2any.min.js"></script>
     <style>
         * {
             margin: 0;
@@ -228,9 +227,12 @@
         <div class="image-container" id="imageContainer"></div>
     </div>
 
-    <script>
+    <script type="module">
+        import libheifFactory from 'https://cdn.jsdelivr.net/npm/libheif-js@1.19.8/libheif-wasm/libheif-bundle.mjs';
+
         class HEICViewer {
             constructor() {
+                this.libheif = null; // Libheifインスタンスを保持
                 this.uploadArea = document.getElementById('uploadArea');
                 this.fileInput = document.getElementById('fileInput');
                 this.loading = document.getElementById('loading');
@@ -295,14 +297,48 @@
                 }
             }
 
+            async initLibheif() {
+                if (!this.libheif) {
+                    this.libheif = await libheifFactory();
+                }
+                return this.libheif;
+            }
+
             async convertAndDisplayImage(file) {
                 try {
-                    // HEIC画像をJPEGに変換
-                    const jpegBlob = await heic2any({
-                        blob: file,
-                        toType: "image/jpeg",
-                        quality: 0.8
+                    const libheif = await this.initLibheif();
+                    // Libheifを使用してHEICをデコード
+                    const buffer = await file.arrayBuffer();
+                    const decoder = new libheif.HeifDecoder();
+                    const data = decoder.decode(buffer);
+
+                    if (!data || data.length === 0) {
+                        throw new Error('HEIC decoding failed: no image data found');
+                    }
+
+                    const image = data[0];
+                    const width = image.get_width();
+                    const height = image.get_height();
+
+                    const canvas = document.createElement('canvas');
+                    canvas.width = width;
+                    canvas.height = height;
+                    const ctx = canvas.getContext('2d');
+                    const imageData = ctx.createImageData(width, height);
+
+                    await new Promise((resolve, reject) => {
+                        image.display(imageData, (displayData) => {
+                            if (!displayData) {
+                                return reject(new Error('HEIF processing error'));
+                            }
+                            resolve();
+                        });
                     });
+
+                    ctx.putImageData(imageData, 0, 0);
+
+                    // キャンバスからJPEG Blobを作成
+                    const jpegBlob = await new Promise(resolve => canvas.toBlob(resolve, 'image/jpeg', 0.8));
 
                     // 画像要素を作成
                     const img = document.createElement('img');
@@ -341,6 +377,7 @@
                     this.imageContainer.appendChild(imageWrapper);
                     
                 } catch (error) {
+                    console.error(error);
                     throw new Error(`${file.name}: ${error.message}`);
                 }
             }
@@ -406,6 +443,8 @@
 
         // アプリケーションを初期化
         document.addEventListener('DOMContentLoaded', () => {
+             // 模块脚本通常是 defer 的，但 DOMContentLoaded 仍然是个好习惯
+             // 或者直接在这里 new，因为 module 脚本默认是在 parsing document 之后执行
             new HEICViewer();
         });
     </script>
