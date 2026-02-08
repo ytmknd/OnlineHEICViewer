@@ -443,8 +443,8 @@
 
         // アプリケーションを初期化
         document.addEventListener('DOMContentLoaded', () => {
-             // 模块脚本通常是 defer 的，但 DOMContentLoaded 仍然是个好习惯
-             // 或者直接在这里 new，因为 module 脚本默认是在 parsing document 之后执行
+            // モジュールスクリプトは通常 defer だが、DOMContentLoaded を使うのは良い習慣
+            // あるいはここで直接 new しても良い。module スクリプトは解析後に実行されるため
             new HEICViewer();
         });
     </script>
