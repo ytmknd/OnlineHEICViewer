@@ -1,0 +1,1067 @@
+<!DOCTYPE html>
+<html lang="">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title data-i18n="title">オンラインHEIC画像ビュアー</title>
+    <script src="https://cdn.jsdelivr.net/npm/libheif-js@1.19.8/libheif-wasm/libheif-bundle.js"
+            integrity="sha256-eTs2yRNol4Syv7pgRW/YfBTtSeLRPztNJhG6rwUUj4E="
+            crossorigin="anonymous"></script>
+    <script src="https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js"
+            integrity="sha256-rMfkFFWoB2W1/Zx+4bgHim0WC7vKRVrq6FTeZclH1Z4="
+            crossorigin="anonymous"></script>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 20px;
+        }
+
+        .container {
+            max-width: 1400px;
+            margin: 0 auto;
+            background: rgba(255, 255, 255, 0.95);
+            border-radius: 15px;
+            padding: 30px;
+            box-shadow: 0 20px 40px rgba(0, 0, 0, 0.1);
+        }
+
+        h1 {
+            text-align: center;
+            color: #333;
+            margin-bottom: 30px;
+            font-size: 2.5em;
+            font-weight: 300;
+        }
+
+        .upload-section {
+            margin-bottom: 20px;
+        }
+
+        .upload-area {
+            border: 3px dashed #667eea;
+            border-radius: 10px;
+            padding: 20px;
+            text-align: center;
+            transition: all 0.3s ease;
+            cursor: pointer;
+            background: rgba(102, 126, 234, 0.05);
+        }
+
+        .upload-area:hover,
+        .upload-area.dragover {
+            border-color: #764ba2;
+            background: rgba(118, 75, 162, 0.1);
+            transform: translateY(-2px);
+        }
+
+        .upload-icon {
+            font-size: 2.2em;
+            margin-bottom: 8px;
+            display: block;
+        }
+
+        .upload-text {
+            font-size: 0.95em;
+            color: #666;
+            margin-bottom: 12px;
+            line-height: 1.5;
+        }
+
+        .file-input {
+            display: none;
+        }
+
+        .upload-btn {
+            background: linear-gradient(45deg, #667eea, #764ba2);
+            color: white;
+            border: none;
+            padding: 12px 28px;
+            border-radius: 25px;
+            font-size: 1em;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            box-shadow: 0 5px 15px rgba(102, 126, 234, 0.3);
+        }
+
+        .upload-btn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 7px 20px rgba(102, 126, 234, 0.4);
+        }
+
+        .loading {
+            display: none;
+            text-align: center;
+            padding: 15px;
+        }
+
+        .spinner {
+            border: 4px solid #f3f3f3;
+            border-top: 4px solid #667eea;
+            border-radius: 50%;
+            width: 40px;
+            height: 40px;
+            animation: spin 1s linear infinite;
+            margin: 0 auto 10px;
+        }
+
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+
+        .loading-label {
+            color: #666;
+            font-size: 0.95em;
+        }
+
+        .error {
+            background: #ff6b6b;
+            color: white;
+            padding: 12px 16px;
+            border-radius: 10px;
+            margin: 15px 0;
+            text-align: center;
+            display: none;
+        }
+
+        .success {
+            background: #51cf66;
+            color: white;
+            padding: 12px 16px;
+            border-radius: 10px;
+            margin: 15px 0;
+            text-align: center;
+            display: none;
+        }
+
+        .gallery-section {
+            display: none;
+            margin-top: 20px;
+        }
+
+        .gallery-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 18px;
+            padding-bottom: 14px;
+            border-bottom: 2px solid rgba(102, 126, 234, 0.2);
+        }
+
+        .gallery-count {
+            font-size: 1.05em;
+            color: #555;
+            font-weight: 500;
+        }
+
+        .clear-btn {
+            background: linear-gradient(45deg, #ff6b6b, #ee5a24);
+            color: white;
+            border: none;
+            padding: 8px 18px;
+            border-radius: 20px;
+            font-size: 0.88em;
+            cursor: pointer;
+            transition: all 0.3s ease;
+        }
+
+        .clear-btn:hover {
+            transform: translateY(-1px);
+            box-shadow: 0 4px 12px rgba(255, 107, 107, 0.4);
+        }
+
+        .image-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(230px, 1fr));
+            gap: 20px;
+        }
+
+        .image-card {
+            background: white;
+            border-radius: 12px;
+            overflow: hidden;
+            box-shadow: 0 4px 15px rgba(0, 0, 0, 0.1);
+            transition: transform 0.25s ease, box-shadow 0.25s ease;
+        }
+
+        .image-card:hover {
+            transform: translateY(-4px);
+            box-shadow: 0 10px 28px rgba(0, 0, 0, 0.16);
+        }
+
+        .thumbnail-wrap {
+            position: relative;
+            aspect-ratio: 1 / 1;
+            overflow: hidden;
+            background: #f4f4f4;
+            cursor: pointer;
+        }
+
+        .thumbnail {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+            transition: transform 0.3s ease;
+            display: block;
+        }
+
+        .thumbnail-wrap:hover .thumbnail {
+            transform: scale(1.06);
+        }
+
+        .thumbnail-overlay {
+            position: absolute;
+            inset: 0;
+            background: rgba(0, 0, 0, 0);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            transition: background 0.25s ease;
+        }
+
+        .thumbnail-wrap:hover .thumbnail-overlay {
+            background: rgba(0, 0, 0, 0.28);
+        }
+
+        .zoom-icon {
+            color: white;
+            font-size: 2em;
+            opacity: 0;
+            transition: opacity 0.25s ease;
+            text-shadow: 0 2px 8px rgba(0, 0, 0, 0.5);
+        }
+
+        .thumbnail-wrap:hover .zoom-icon {
+            opacity: 1;
+        }
+
+        .image-card.loading-card .thumbnail-wrap {
+            background: linear-gradient(90deg, #f0f0f0 25%, #e4e4e4 50%, #f0f0f0 75%);
+            background-size: 200% 100%;
+            animation: shimmer 1.4s infinite;
+            cursor: default;
+        }
+
+        @keyframes shimmer {
+            0% { background-position: 200% 0; }
+            100% { background-position: -200% 0; }
+        }
+
+        .card-loading-label {
+            padding: 12px;
+            color: #aaa;
+            font-size: 0.82em;
+            text-align: center;
+        }
+
+        .card-loading-name {
+            margin-top: 4px;
+            font-size: 0.9em;
+            color: #c0c0c0;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+
+        .card-info {
+            padding: 12px;
+        }
+
+        .card-filename {
+            font-size: 0.84em;
+            color: #333;
+            font-weight: 600;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            margin-bottom: 5px;
+        }
+
+        .card-meta {
+            font-size: 0.76em;
+            color: #888;
+            line-height: 1.55;
+            margin-bottom: 9px;
+        }
+
+        .download-btn {
+            display: block;
+            width: 100%;
+            background: linear-gradient(45deg, #51cf66, #40c057);
+            color: white;
+            border: none;
+            padding: 8px;
+            border-radius: 8px;
+            font-size: 0.83em;
+            cursor: pointer;
+            transition: all 0.25s ease;
+            text-align: center;
+        }
+
+        .download-btn:hover {
+            transform: translateY(-1px);
+            box-shadow: 0 4px 12px rgba(81, 207, 102, 0.4);
+        }
+
+        .card-error-wrap {
+            padding: 12px;
+            text-align: center;
+        }
+
+        .card-error-icon {
+            font-size: 1.8em;
+            margin-bottom: 6px;
+        }
+
+        .card-error-msg {
+            font-size: 0.78em;
+            color: #ff6b6b;
+            line-height: 1.4;
+        }
+
+        /* Lightbox */
+        .lightbox {
+            display: none;
+            position: fixed;
+            inset: 0;
+            background: rgba(0, 0, 0, 0.93);
+            z-index: 1000;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .lightbox.active {
+            display: flex;
+        }
+
+        .lightbox-inner {
+            position: relative;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            max-width: 90vw;
+            max-height: 90vh;
+        }
+
+        .lightbox-img {
+            max-width: 88vw;
+            max-height: 80vh;
+            object-fit: contain;
+            border-radius: 8px;
+            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.6);
+            display: block;
+        }
+
+        .lightbox-caption {
+            color: rgba(255, 255, 255, 0.75);
+            font-size: 0.88em;
+            margin-top: 14px;
+            text-align: center;
+            max-width: 80vw;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+
+        .lightbox-close {
+            position: fixed;
+            top: 18px;
+            right: 22px;
+            background: rgba(255, 255, 255, 0.15);
+            border: none;
+            color: white;
+            font-size: 1.4em;
+            width: 44px;
+            height: 44px;
+            border-radius: 50%;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            transition: background 0.2s;
+        }
+
+        .lightbox-close:hover {
+            background: rgba(255, 255, 255, 0.3);
+        }
+
+        .lightbox-counter {
+            position: fixed;
+            top: 24px;
+            left: 50%;
+            transform: translateX(-50%);
+            color: rgba(255, 255, 255, 0.75);
+            font-size: 0.9em;
+            pointer-events: none;
+        }
+
+        .lightbox-nav {
+            position: fixed;
+            top: 50%;
+            transform: translateY(-50%);
+            background: rgba(255, 255, 255, 0.15);
+            border: none;
+            color: white;
+            font-size: 2.2em;
+            width: 52px;
+            height: 52px;
+            border-radius: 50%;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            transition: background 0.2s;
+        }
+
+        .lightbox-nav:hover:not(:disabled) {
+            background: rgba(255, 255, 255, 0.3);
+        }
+
+        .lightbox-nav:disabled {
+            opacity: 0.25;
+            cursor: default;
+        }
+
+        .lightbox-prev { left: 14px; }
+        .lightbox-next { right: 14px; }
+
+        /* Quality selector */
+        .quality-bar {
+            display: flex;
+            align-items: center;
+            gap: 14px;
+            margin-bottom: 20px;
+            padding: 12px 16px;
+            background: rgba(102, 126, 234, 0.06);
+            border-radius: 10px;
+            flex-wrap: wrap;
+        }
+
+        .quality-label {
+            font-size: 0.9em;
+            color: #555;
+            font-weight: 500;
+            white-space: nowrap;
+        }
+
+        .quality-opts {
+            display: flex;
+            gap: 8px;
+            flex-wrap: wrap;
+        }
+
+        .quality-opt {
+            cursor: pointer;
+        }
+
+        .quality-opt input[type="radio"] {
+            display: none;
+        }
+
+        .quality-opt span {
+            display: block;
+            padding: 5px 14px;
+            border-radius: 20px;
+            font-size: 0.85em;
+            border: 1.5px solid #ccc;
+            color: #666;
+            transition: all 0.2s ease;
+            user-select: none;
+        }
+
+        .quality-opt:hover span {
+            border-color: #667eea;
+            color: #667eea;
+        }
+
+        .quality-opt input[type="radio"]:checked + span {
+            background: linear-gradient(45deg, #667eea, #764ba2);
+            border-color: transparent;
+            color: white;
+            box-shadow: 0 2px 8px rgba(102, 126, 234, 0.35);
+        }
+
+        /* ZIP download button */
+        .zip-btn {
+            background: linear-gradient(45deg, #667eea, #764ba2);
+            color: white;
+            border: none;
+            padding: 8px 18px;
+            border-radius: 20px;
+            font-size: 0.88em;
+            cursor: pointer;
+            transition: all 0.3s ease;
+        }
+
+        .zip-btn:hover:not(:disabled) {
+            transform: translateY(-1px);
+            box-shadow: 0 4px 12px rgba(102, 126, 234, 0.4);
+        }
+
+        .zip-btn:disabled {
+            opacity: 0.65;
+            cursor: default;
+        }
+
+        @media (max-width: 768px) {
+            .container {
+                padding: 15px;
+                margin: 5px;
+            }
+
+            h1 {
+                font-size: 1.8em;
+                margin-bottom: 20px;
+            }
+
+            .quality-bar {
+                gap: 10px;
+                padding: 10px 12px;
+            }
+
+            .image-grid {
+                grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+                gap: 12px;
+            }
+
+            .lightbox-nav {
+                width: 40px;
+                height: 40px;
+                font-size: 1.6em;
+            }
+
+            .lightbox-prev { left: 6px; }
+            .lightbox-next { right: 6px; }
+
+            .lightbox-img {
+                max-width: 95vw;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1 data-i18n="heading">📸 オンラインHEIC画像ビュアー</h1>
+
+        <div class="upload-section">
+            <div class="upload-area" id="uploadArea">
+                <span class="upload-icon">📂</span>
+                <div class="upload-text" data-i18n-html="uploadText">
+                    HEIC画像をここにドラッグ＆ドロップ（複数同時可）<br>
+                    または下のボタンでファイルを選択してください
+                </div>
+                <button class="upload-btn" data-i18n="selectBtn" onclick="document.getElementById('fileInput').click()">
+                    ファイルを選択
+                </button>
+                <input type="file" id="fileInput" class="file-input" accept=".heic,.HEIC" multiple>
+            </div>
+        </div>
+
+        <div class="quality-bar">
+            <span class="quality-label" data-i18n="qualityLabel">画質</span>
+            <div class="quality-opts">
+                <label class="quality-opt">
+                    <input type="radio" name="quality" value="0.92" checked>
+                    <span data-i18n="qualityHigh">高画質</span>
+                </label>
+                <label class="quality-opt">
+                    <input type="radio" name="quality" value="0.75">
+                    <span data-i18n="qualityMid">中画質</span>
+                </label>
+                <label class="quality-opt">
+                    <input type="radio" name="quality" value="0.50">
+                    <span data-i18n="qualityLow">低画質</span>
+                </label>
+            </div>
+        </div>
+
+        <div class="loading" id="loading">
+            <div class="spinner"></div>
+            <div class="loading-label" id="loadingLabel" data-i18n="converting">変換中...</div>
+        </div>
+
+        <div class="error" id="error"></div>
+        <div class="success" id="success"></div>
+
+        <div class="gallery-section" id="gallerySection">
+            <div class="gallery-header">
+                <div class="gallery-count" id="galleryCount"></div>
+                <div style="display:flex;gap:8px;">
+                    <button class="zip-btn" id="zipBtn" data-i18n="downloadZip">⬇ ZIP一括ダウンロード</button>
+                    <button class="clear-btn" id="clearBtn" data-i18n="clearAll">🗑 全て削除</button>
+                </div>
+            </div>
+            <div class="image-grid" id="imageGrid"></div>
+        </div>
+    </div>
+
+    <div class="lightbox" id="lightbox">
+        <button class="lightbox-close" id="lightboxClose" data-i18n-aria="close" aria-label="閉じる">✕</button>
+        <div class="lightbox-counter" id="lightboxCounter"></div>
+        <button class="lightbox-nav lightbox-prev" id="lightboxPrev" data-i18n-aria="prevImage" aria-label="前の画像">‹</button>
+        <div class="lightbox-inner">
+            <img class="lightbox-img" id="lightboxImg" src="" alt="">
+            <div class="lightbox-caption" id="lightboxCaption"></div>
+        </div>
+        <button class="lightbox-nav lightbox-next" id="lightboxNext" data-i18n-aria="nextImage" aria-label="次の画像">›</button>
+    </div>
+
+    <script>
+        let _libheifLib = null;
+
+        async function getLibheif() {
+            if (_libheifLib) return _libheifLib;
+            if (typeof libheif === 'undefined') throw new Error('libheif not loaded');
+            // Already initialized (HeifDecoder directly on the global)
+            if (typeof libheif.HeifDecoder === 'function') {
+                _libheifLib = libheif;
+                return _libheifLib;
+            }
+            // Factory function pattern (Emscripten): call to initialize
+            if (typeof libheif !== 'function') throw new Error('Unexpected libheif export shape');
+            const result = libheif();
+            const module = (result && typeof result.then === 'function') ? await result : result;
+            if (module && module.ready) await module.ready;
+            _libheifLib = module;
+            return _libheifLib;
+        }
+
+        async function heicToJpeg(file, quality = 0.92) {
+            const lib = await getLibheif();
+            const buffer = new Uint8Array(await file.arrayBuffer());
+            const decoder = new lib.HeifDecoder();
+            let images;
+            try {
+                images = decoder.decode(buffer);
+            } catch (e) {
+                throw new Error(e.message || 'Decoding failed');
+            }
+            if (!images || images.length === 0) throw new Error('No images found in file');
+            const image = images[0];
+            const width = image.get_width();
+            const height = image.get_height();
+            const canvas = document.createElement('canvas');
+            canvas.width = width;
+            canvas.height = height;
+            const ctx = canvas.getContext('2d');
+            const imageData = ctx.createImageData(width, height);
+            await new Promise((resolve, reject) => {
+                image.display(imageData, (displayData) => {
+                    if (!displayData) { reject(new Error('HEIF display failed')); return; }
+                    ctx.putImageData(imageData, 0, 0);
+                    resolve();
+                });
+            });
+            return new Promise((resolve, reject) => {
+                canvas.toBlob(
+                    blob => blob ? resolve(blob) : reject(new Error('JPEG export failed')),
+                    'image/jpeg',
+                    quality
+                );
+            });
+        }
+
+        const I18N = {
+            ja: {
+                title:        'オンラインHEIC画像ビュアー',
+                heading:      '📸 オンラインHEIC画像ビュアー',
+                uploadText:   'HEIC画像をここにドラッグ＆ドロップ（複数同時可）<br>または下のボタンでファイルを選択してください',
+                selectBtn:    'ファイルを選択',
+                converting:   '変換中...',
+                clearAll:     '🗑 全て削除',
+                close:        '閉じる',
+                prevImage:    '前の画像',
+                nextImage:    '次の画像',
+                cardConverting:  '⏳ 変換中...',
+                convertFailed:   '変換失敗',
+                originalSize:    '元サイズ',
+                downloadBtn:     '⬇ JPEGでダウンロード',
+                noHeicError:     'HEIC形式のファイルを選択してください。',
+                allFailed:       '全ての画像の変換に失敗しました。',
+                convertingN:  (n) => `${n}枚の画像を変換中...`,
+                successN:     (n) => `${n}枚の画像を正常に変換・表示しました。`,
+                partialSuccess: (ok, fail) => `${ok}枚変換成功 / ${fail}枚失敗`,
+                galleryCount: (n) => `${n}枚の画像`,
+                qualityLabel:    '画質',
+                qualityHigh:     '高画質',
+                qualityMid:      '中画質',
+                qualityLow:      '低画質',
+                downloadZip:     '⬇ ZIP一括ダウンロード',
+                zippingMsg:      'ZIP作成中...',
+            },
+            en: {
+                title:        'Online HEIC Image Viewer',
+                heading:      '📸 Online HEIC Image Viewer',
+                uploadText:   'Drag &amp; drop HEIC images here (multiple files supported)<br>or click the button below to select files',
+                selectBtn:    'Select Files',
+                converting:   'Converting...',
+                clearAll:     '🗑 Clear All',
+                close:        'Close',
+                prevImage:    'Previous image',
+                nextImage:    'Next image',
+                cardConverting:  '⏳ Converting...',
+                convertFailed:   'Conversion failed',
+                originalSize:    'Original',
+                downloadBtn:     '⬇ Download as JPEG',
+                noHeicError:     'Please select HEIC format files.',
+                allFailed:       'All image conversions failed.',
+                convertingN:  (n) => `Converting ${n} image${n === 1 ? '' : 's'}...`,
+                successN:     (n) => `Successfully converted ${n} image${n === 1 ? '' : 's'}.`,
+                partialSuccess: (ok, fail) => `${ok} converted / ${fail} failed`,
+                galleryCount: (n) => `${n} image${n === 1 ? '' : 's'}`,
+                qualityLabel:    'Quality',
+                qualityHigh:     'High',
+                qualityMid:      'Medium',
+                qualityLow:      'Low',
+                downloadZip:     '⬇ Download ZIP',
+                zippingMsg:      'Creating ZIP...',
+            },
+        };
+
+        class HEICViewer {
+            constructor() {
+                this.lang = (navigator.language || 'en').startsWith('ja') ? 'ja' : 'en';
+                this.T = I18N[this.lang];
+
+                this.uploadArea = document.getElementById('uploadArea');
+                this.fileInput = document.getElementById('fileInput');
+                this.loading = document.getElementById('loading');
+                this.loadingLabel = document.getElementById('loadingLabel');
+                this.error = document.getElementById('error');
+                this.success = document.getElementById('success');
+                this.gallerySection = document.getElementById('gallerySection');
+                this.galleryCount = document.getElementById('galleryCount');
+                this.imageGrid = document.getElementById('imageGrid');
+                this.lightbox = document.getElementById('lightbox');
+                this.lightboxImg = document.getElementById('lightboxImg');
+                this.lightboxCaption = document.getElementById('lightboxCaption');
+                this.lightboxCounter = document.getElementById('lightboxCounter');
+
+                this.images = [];
+                this.lightboxIndex = 0;
+                this.activeConversions = 0;
+
+                this.applyTranslations();
+                this.initEventListeners();
+            }
+
+            applyTranslations() {
+                const T = this.T;
+                document.documentElement.lang = this.lang;
+                document.title = T.title;
+
+                document.querySelectorAll('[data-i18n]').forEach(el => {
+                    const key = el.dataset.i18n;
+                    if (typeof T[key] === 'string') el.textContent = T[key];
+                });
+
+                document.querySelectorAll('[data-i18n-html]').forEach(el => {
+                    const key = el.dataset.i18nHtml;
+                    if (typeof T[key] === 'string') el.innerHTML = T[key];
+                });
+
+                document.querySelectorAll('[data-i18n-aria]').forEach(el => {
+                    const key = el.dataset.i18nAria;
+                    if (typeof T[key] === 'string') el.setAttribute('aria-label', T[key]);
+                });
+            }
+
+            initEventListeners() {
+                this.uploadArea.addEventListener('dragover', (e) => {
+                    e.preventDefault();
+                    this.uploadArea.classList.add('dragover');
+                });
+
+                this.uploadArea.addEventListener('dragleave', () => {
+                    this.uploadArea.classList.remove('dragover');
+                });
+
+                this.uploadArea.addEventListener('drop', (e) => {
+                    e.preventDefault();
+                    this.uploadArea.classList.remove('dragover');
+                    this.handleFiles(Array.from(e.dataTransfer.files));
+                });
+
+                this.fileInput.addEventListener('change', (e) => {
+                    this.handleFiles(Array.from(e.target.files));
+                    e.target.value = '';
+                });
+
+                document.getElementById('clearBtn').addEventListener('click', () => this.clearGallery());
+                document.getElementById('zipBtn').addEventListener('click', () => this.downloadAllAsZip());
+
+                document.getElementById('lightboxClose').addEventListener('click', () => this.closeLightbox());
+                document.getElementById('lightboxPrev').addEventListener('click', () => this.navigateLightbox(-1));
+                document.getElementById('lightboxNext').addEventListener('click', () => this.navigateLightbox(1));
+
+                this.lightbox.addEventListener('click', (e) => {
+                    if (e.target === this.lightbox) this.closeLightbox();
+                });
+
+                document.addEventListener('keydown', (e) => {
+                    if (!this.lightbox.classList.contains('active')) return;
+                    if (e.key === 'Escape') this.closeLightbox();
+                    if (e.key === 'ArrowLeft') this.navigateLightbox(-1);
+                    if (e.key === 'ArrowRight') this.navigateLightbox(1);
+                });
+            }
+
+            async handleFiles(files) {
+                this.hideMessages();
+
+                const heicFiles = files.filter(file =>
+                    file.type === 'image/heic' ||
+                    file.name.toLowerCase().endsWith('.heic')
+                );
+
+                if (heicFiles.length === 0) {
+                    this.showError(this.T.noHeicError);
+                    return;
+                }
+
+                const cardIds = heicFiles.map(file => this.addLoadingCard(file.name));
+                this.showGallery();
+                this.startLoading(heicFiles.length);
+
+                const results = await Promise.allSettled(
+                    heicFiles.map((file, i) => this.convertFile(file, cardIds[i]))
+                );
+
+                this.endLoading(heicFiles.length);
+
+                const succeeded = results.filter(r => r.status === 'fulfilled').length;
+                const failed = results.filter(r => r.status === 'rejected').length;
+
+                if (failed === 0) {
+                    this.showSuccess(this.T.successN(succeeded));
+                } else if (succeeded > 0) {
+                    this.showSuccess(this.T.partialSuccess(succeeded, failed));
+                } else {
+                    this.showError(this.T.allFailed);
+                }
+            }
+
+            addLoadingCard(filename) {
+                const cardId = `card-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
+                const card = document.createElement('div');
+                card.className = 'image-card loading-card';
+                card.id = cardId;
+                card.innerHTML = `
+                    <div class="thumbnail-wrap"></div>
+                    <div class="card-loading-label">
+                        ${this.escape(this.T.cardConverting)}
+                        <div class="card-loading-name">${this.escape(this.truncate(filename, 24))}</div>
+                    </div>
+                `;
+                this.imageGrid.appendChild(card);
+                return cardId;
+            }
+
+            async convertFile(file, cardId) {
+                const card = document.getElementById(cardId);
+                const T = this.T;
+                try {
+                    const quality = parseFloat(
+                        document.querySelector('input[name="quality"]:checked')?.value ?? '0.92'
+                    );
+                    const jpegBlob = await heicToJpeg(file, quality);
+
+                    const url = URL.createObjectURL(jpegBlob);
+                    const imageIndex = this.images.length;
+
+                    this.images.push({ url, blob: jpegBlob, filename: file.name, originalSize: file.size, convertedSize: jpegBlob.size });
+                    this.updateGalleryCount();
+
+                    card.className = 'image-card';
+                    card.innerHTML = `
+                        <div class="thumbnail-wrap">
+                            <img class="thumbnail" src="${url}" alt="${this.escape(file.name)}" loading="lazy">
+                            <div class="thumbnail-overlay">
+                                <span class="zoom-icon">🔍</span>
+                            </div>
+                        </div>
+                        <div class="card-info">
+                            <div class="card-filename" title="${this.escape(file.name)}">${this.escape(file.name)}</div>
+                            <div class="card-meta">
+                                ${this.escape(T.originalSize)}: ${this.formatSize(file.size)}<br>
+                                JPEG: ${this.formatSize(jpegBlob.size)}
+                            </div>
+                            <button class="download-btn">${this.escape(T.downloadBtn)}</button>
+                        </div>
+                    `;
+
+                    card.querySelector('.thumbnail-wrap').addEventListener('click', () => {
+                        this.openLightbox(imageIndex);
+                    });
+
+                    card.querySelector('.download-btn').addEventListener('click', (e) => {
+                        e.stopPropagation();
+                        this.downloadImage(jpegBlob, file.name);
+                    });
+
+                } catch (err) {
+                    card.className = 'image-card';
+                    card.innerHTML = `
+                        <div class="thumbnail-wrap" style="cursor:default;"></div>
+                        <div class="card-error-wrap">
+                            <div class="card-error-icon">❌</div>
+                            <div class="card-error-msg">
+                                <strong>${this.escape(this.truncate(file.name, 20))}</strong><br>
+                                ${this.escape(T.convertFailed)}: ${this.escape(err.message)}
+                            </div>
+                        </div>
+                    `;
+                    throw err;
+                }
+            }
+
+            openLightbox(index) {
+                this.lightboxIndex = index;
+                this.renderLightbox();
+                this.lightbox.classList.add('active');
+                document.body.style.overflow = 'hidden';
+            }
+
+            closeLightbox() {
+                this.lightbox.classList.remove('active');
+                document.body.style.overflow = '';
+            }
+
+            navigateLightbox(direction) {
+                const next = this.lightboxIndex + direction;
+                if (next < 0 || next >= this.images.length) return;
+                this.lightboxIndex = next;
+                this.renderLightbox();
+            }
+
+            renderLightbox() {
+                const img = this.images[this.lightboxIndex];
+                if (!img) return;
+                this.lightboxImg.src = img.url;
+                this.lightboxImg.alt = img.filename;
+                this.lightboxCaption.textContent = img.filename;
+                this.lightboxCounter.textContent = `${this.lightboxIndex + 1} / ${this.images.length}`;
+                document.getElementById('lightboxPrev').disabled = this.lightboxIndex === 0;
+                document.getElementById('lightboxNext').disabled = this.lightboxIndex === this.images.length - 1;
+            }
+
+            async downloadAllAsZip() {
+                if (this.images.length === 0) return;
+                const btn = document.getElementById('zipBtn');
+                btn.disabled = true;
+                btn.textContent = this.T.zippingMsg;
+                try {
+                    const zip = new JSZip();
+                    this.images.forEach(img => {
+                        zip.file(img.filename.replace(/\.heic$/i, '.jpg'), img.blob);
+                    });
+                    const zipBlob = await zip.generateAsync({ type: 'blob' });
+                    const url = URL.createObjectURL(zipBlob);
+                    const a = document.createElement('a');
+                    a.href = url;
+                    a.download = `heic-images-${new Date().toISOString().slice(0, 10)}.zip`;
+                    document.body.appendChild(a);
+                    a.click();
+                    document.body.removeChild(a);
+                    setTimeout(() => URL.revokeObjectURL(url), 100);
+                } finally {
+                    btn.disabled = false;
+                    btn.textContent = this.T.downloadZip;
+                }
+            }
+
+            clearGallery() {
+                this.closeLightbox();
+                this.images.forEach(img => URL.revokeObjectURL(img.url));
+                this.images = [];
+                this.imageGrid.innerHTML = '';
+                this.gallerySection.style.display = 'none';
+                this.hideMessages();
+            }
+
+            showGallery() {
+                this.gallerySection.style.display = 'block';
+            }
+
+            updateGalleryCount() {
+                this.galleryCount.textContent = this.T.galleryCount(this.images.length);
+            }
+
+            startLoading(count) {
+                this.activeConversions += count;
+                this.loadingLabel.textContent = this.T.convertingN(this.activeConversions);
+                this.loading.style.display = 'block';
+            }
+
+            endLoading(count) {
+                this.activeConversions = Math.max(0, this.activeConversions - count);
+                if (this.activeConversions === 0) {
+                    this.loading.style.display = 'none';
+                } else {
+                    this.loadingLabel.textContent = this.T.convertingN(this.activeConversions);
+                }
+            }
+
+            downloadImage(blob, originalFileName) {
+                const url = URL.createObjectURL(blob);
+                const link = document.createElement('a');
+                link.href = url;
+                link.download = originalFileName.replace(/\.heic$/i, '.jpg');
+                document.body.appendChild(link);
+                link.click();
+                document.body.removeChild(link);
+                setTimeout(() => URL.revokeObjectURL(url), 100);
+            }
+
+            formatSize(bytes) {
+                if (bytes === 0) return '0 B';
+                const k = 1024;
+                const sizes = ['B', 'KB', 'MB', 'GB'];
+                const i = Math.floor(Math.log(bytes) / Math.log(k));
+                return parseFloat((bytes / Math.pow(k, i)).toFixed(1)) + ' ' + sizes[i];
+            }
+
+            truncate(str, max) {
+                return str.length > max ? str.slice(0, max) + '…' : str;
+            }
+
+            escape(str) {
+                return str
+                    .replace(/&/g, '&amp;')
+                    .replace(/</g, '&lt;')
+                    .replace(/>/g, '&gt;')
+                    .replace(/"/g, '&quot;');
+            }
+
+            showError(message) {
+                this.error.textContent = message;
+                this.error.style.display = 'block';
+                setTimeout(() => { this.error.style.display = 'none'; }, 6000);
+            }
+
+            showSuccess(message) {
+                this.success.textContent = message;
+                this.success.style.display = 'block';
+                setTimeout(() => { this.success.style.display = 'none'; }, 4000);
+            }
+
+            hideMessages() {
+                this.error.style.display = 'none';
+                this.success.style.display = 'none';
+            }
+        }
+
+        document.addEventListener('DOMContentLoaded', () => {
+            new HEICViewer();
+        });
+    </script>
+</body>
+</html>
